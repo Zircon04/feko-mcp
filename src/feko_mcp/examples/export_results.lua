@@ -1,5 +1,16 @@
 -- Export the solved source impedance, S11 referenced to 50 Ohm, and views.
 local base = model_base or "mba_preliminary"
+-- Coarse wall-clock timing includes time spent waiting for image rendering.
+local function export_image(window, name, width, height)
+    local started = os.time()
+    print("EXPORT_IMAGE_START "..name..".png")
+    io.flush()
+    window:ExportImage(name, "png", width, height)
+    print(string.format("EXPORT_IMAGE_DONE %s.png elapsed_seconds=%g",
+        name, os.difftime(os.time(), started)))
+    io.flush()
+end
+
 local app = pf.GetApplication()
 app:NewProject()
 app:OpenFile(base..".fek")
@@ -35,23 +46,24 @@ trace.Quantity.ReferenceImpedanceExpression = "50"
 trace.Quantity.ComplexComponent = pf.Enums.ComplexComponentEnum.Magnitude
 trace.Quantity.ValuesScaledToDB = true
 graph:Restore(); graph:SetSize(1000,600)
-graph:ExportImage(base.."_S11", "png", 1500,900)
+export_image(graph, base.."_S11", 1500,900)
 local view = app.Views[1]
+view:Show()
 view:Restore(); view:SetSize(800,800)
 view.Axes.MainVisible = false; view.Axes.MiniVisible = false
 view:SetViewDirection(pf.Enums.ViewDirectionEnum.Top); view:ZoomToExtents()
 view.Format.ZoomDistance = view.Format.ZoomDistance*0.25
-view:ExportImage(base.."_top", "png",1200,1200)
+export_image(view, base.."_top",1200,1200)
 view:SetViewDirection(pf.Enums.ViewDirectionEnum.Bottom); view:ZoomToExtents()
 view.Format.ZoomDistance = view.Format.ZoomDistance*0.25
-view:ExportImage(base.."_bottom", "png",1200,1200)
+export_image(view, base.."_bottom",1200,1200)
 local dielectric_hidden = pcall(function() view.MeshRendering.Faces.DielectricVisible = false end)
 view:SetViewDirection(pf.Enums.ViewDirectionEnum.Top); view:ZoomToExtents()
 view.Format.ZoomDistance = view.Format.ZoomDistance*0.25
-view:ExportImage(base.."_metal_overlay", "png",1200,1200)
+export_image(view, base.."_metal_overlay",1200,1200)
 if dielectric_hidden then view.MeshRendering.Faces.DielectricVisible = true end
 view:SetViewDirection(pf.Enums.ViewDirectionEnum.Isometric); view:ZoomToExtents()
 view.Format.ZoomDistance = view.Format.ZoomDistance*0.25
-view:ExportImage(base.."_isometric", "png",1200,1000)
+export_image(view, base.."_isometric",1200,1000)
 app:SaveAs(base..".pfs")
 print("EXPORT_COMPLETE "..base)

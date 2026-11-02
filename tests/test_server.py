@@ -133,3 +133,27 @@ class ServerTests(unittest.TestCase):
             self.assertEqual(start.call_args.args[2], ["runfeko", "model.cfx", "-np", "1"])
         with self.assertRaises(ValueError):
             self.server.start_solver(directory.name, "model.cfx", self.server.SETTINGS.max_cores + 1)
+
+    def test_post_stages_bundled_or_unchanged_custom_script(self):
+        bundled = (self.server.EXAMPLES / "export_results.lua").read_text(encoding="utf-8")
+        custom = '-- Custom export; preserve whitespace and Unicode: \u03a9\nprint("custom")\n'
+        for arguments, expected in (({}, bundled), ({"script_text": ""}, bundled),
+                                    ({"script_text": custom}, custom)):
+            with self.subTest(arguments=arguments):
+                directory = self.server.new_job()
+                (directory / "custom_model.bof").touch()
+                with patch.object(self.server.SETTINGS.__class__, "require", return_value="postfeko"), \
+                        patch.object(self.server.subprocess, "Popen") as launch, \
+                        patch.object(self.server.threading, "Thread"):
+                    result = self.server.run_post_script(
+                        directory.name, model_base="custom_model", **arguments)
+                self.assertEqual(result["job_id"], directory.name)
+                self.assertEqual(result["stage"], "post")
+                self.assertEqual(result["state"], "starting")
+                self.assertTrue((directory / ".stage.lock").exists())
+                self.assertEqual((directory / "export.lua").read_text(encoding="utf-8"), expected)
+                request = json.loads((directory / "request_post.json").read_text(encoding="utf-8"))
+                self.assertEqual(request, {"stage": "post", "command": [
+                    "postfeko", "--non-interactive", "--run-script", str(directory / "export.lua"),
+                    "--configure-script", 'model_base="custom_model"']})
+                launch.assert_called_once()

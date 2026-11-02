@@ -20,7 +20,9 @@ JOBS.mkdir(parents=True, exist_ok=True)
 mcp = FastMCP("FEKO local bridge", log_level="WARNING", instructions=
     "Use CADFEKO Lua API for construction, a separate solver job for computation, "
     "and POSTFEKO Lua API for exports. Poll job status; do not assume process startup "
-    "means successful computation. The supplied antenna example is a preliminary "
+    "means successful computation. For POSTFEKO 3D PNG export, explicitly activate "
+    "the target view with view:Show() before sizing, camera setup and ExportImage(). "
+    "The supplied antenna example is a preliminary "
     "reconstruction with explicit assumptions in MODEL_NOTES.md.")
 
 def job_directory(job_id):
@@ -147,7 +149,17 @@ def start_solver(job_id: str, model_filename: str = "mba_preliminary.cfx", cores
 
 @mcp.tool()
 def run_post_script(job_id: str, script_text: str = "", model_base: str = "mba_preliminary") -> dict:
-    """Run POSTFEKO Lua in a solved job. An empty script uses the tested S11/impedance exporter."""
+    """Run POSTFEKO Lua asynchronously in a solved job.
+
+    An empty script uses the bundled first-excitation S11/impedance exporter
+    (50 ohm reference), including Touchstone, an S11 PNG, four 3D PNGs and PFS.
+    For custom 3D PNG exports, explicitly activate the target view with
+    view:Show(), then Restore()/SetSize(), configure the camera, ZoomToExtents()
+    and ExportImage(). Explicit Show() improved reliability in native testing.
+    Custom scripts are passed unchanged. The bundled exporter logs per-image
+    progress and coarse elapsed seconds. Poll get_job_status for successful
+    post completion and ready_for_next_stage, then inspect artifacts.
+    """
     directory = job_directory(job_id)
     if job_id == "example":
         raise ValueError("Use a new job to avoid overwriting the delivered example")
