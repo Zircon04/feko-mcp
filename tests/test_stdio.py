@@ -15,11 +15,18 @@ class StdioTests(unittest.TestCase):
                 parameters = StdioServerParameters(command=sys.executable, args=["-m", "feko_mcp"], env=environment)
                 async with stdio_client(parameters) as (read, write):
                     async with ClientSession(read, write) as session:
-                        await session.initialize()
+                        initialized = await session.initialize()
+                        self.assertIn("view:Show()", initialized.instructions)
                         tools = await session.list_tools()
                         self.assertEqual({tool.name for tool in tools.tools}, {
                             "get_environment", "read_api", "run_cad_script", "create_preliminary_model",
                             "start_solver", "get_job_status", "run_post_script", "get_artifacts", "read_result_text"})
+                        post = next(tool for tool in tools.tools if tool.name == "run_post_script")
+                        self.assertIn("view:Show()", post.description)
+                        self.assertIn("Custom scripts are passed unchanged", post.description)
+                        self.assertEqual(set(post.inputSchema["properties"]),
+                                         {"job_id", "script_text", "model_base"})
+                        self.assertEqual(post.inputSchema["required"], ["job_id"])
                         result = await session.call_tool("read_result_text", {"job_id": "example", "filename": "MODEL_NOTES.md"})
                         self.assertFalse(result.isError)
                         self.assertIn("not reproduced", result.content[0].text)

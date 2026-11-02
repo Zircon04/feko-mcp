@@ -88,6 +88,28 @@ Sample prompt:
 > API first, solve on one core, check status, and export S11 referenced to
 > 50 ohm. Report solver errors and output paths.
 
+For the bundled first-excitation S11/impedance and image exports, leave
+`script_text` empty in `run_post_script` and set `model_base` to your solved
+model's basename. For custom 3D PNG exports, explicitly activate the target
+view with `view:Show()` before sizing, camera setup and export. This sequence
+improved reliability in native testing:
+
+```lua
+local view = app.Views[1]
+view:Show()
+view:Restore(); view:SetSize(800,800)
+view:SetViewDirection(pf.Enums.ViewDirectionEnum.Isometric)
+view:ZoomToExtents()
+view:ExportImage("model_isometric", "png", 1200,1000)
+```
+
+The bundled exporter retains its existing camera zoom adjustments and logs
+`EXPORT_IMAGE_START` / `EXPORT_IMAGE_DONE` for each PNG in `post.log`, including
+coarse wall-clock `elapsed_seconds` (second resolution; subsecond exports may
+report zero). These messages are also available in `get_job_status` log tails.
+`EXPORT_COMPLETE` follows the PFS save; check successful stage completion too.
+Custom Lua scripts are passed unchanged.
+
 Jobs live in `<workspace>/jobs/<job_id>`. Workers continue after MCP requests
 return. There is no built-in cancellation: inspect worker status/PID before
 managing a process manually. No network listener is opened. Lua runs with the
