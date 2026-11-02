@@ -21,10 +21,11 @@ class WorkerTests(unittest.TestCase):
             lock.touch()
             status = directory / "status_solve.json"
             cleanup_records = []
-            real_unlink = Path.unlink
+            target_cls = type(lock)
+            real_unlink = target_cls.unlink
 
             def observe_cleanup(path, *args, **kwargs):
-                if path == lock:
+                if path.resolve() == lock.resolve() or path.name == lock.name:
                     cleanup_records.append(json.loads(status.read_text(encoding="utf-8")))
                 return real_unlink(path, *args, **kwargs)
 
@@ -33,7 +34,7 @@ class WorkerTests(unittest.TestCase):
             with patch.object(sys, "argv", [str(WORKER), str(request)]), \
                     patch("subprocess.Popen", return_value=process,
                           side_effect=launch_error) as launch, \
-                    patch.object(Path, "unlink", observe_cleanup):
+                    patch.object(target_cls, "unlink", observe_cleanup):
                 runpy.run_path(str(WORKER), run_name="__main__")
 
             record = json.loads(status.read_text(encoding="utf-8"))
