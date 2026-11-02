@@ -162,13 +162,18 @@ def run_post_script(job_id: str, script_text: str = "", model_base: str = "mba_p
 
 @mcp.tool()
 def get_job_status(job_id: str) -> dict:
-    """Read persistent stage status and recent FEKO diagnostics without blocking a long solve."""
+    """Read stage status, next-stage readiness, and recent FEKO diagnostics."""
     directory = job_directory(job_id)
     statuses = [json.loads(p.read_text(encoding="utf-8")) for p in sorted(directory.glob("status_*.json"))]
     logs = {}
     for p in directory.glob("*.log"):
         logs[p.name] = p.read_text(encoding="utf-8", errors="replace")[-5000:].replace("\b", "")
-    return {"job_id": job_id, "directory": str(directory), "stages": statuses, "log_tails": logs}
+    # Read the lock after statuses: terminal publication precedes worker cleanup.
+    # This is a polling snapshot, not a reservation; start_stage still owns admission.
+    ready = bool(statuses) and all(r.get("state") in {"completed", "failed"} for r in statuses) \
+        and not (directory / ".stage.lock").exists()
+    return {"job_id": job_id, "directory": str(directory), "stages": statuses,
+            "log_tails": logs, "ready_for_next_stage": ready}
 
 @mcp.tool()
 def get_artifacts(job_id: str = "example") -> dict:

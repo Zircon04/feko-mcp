@@ -74,6 +74,14 @@ Process startup does not mean calculation success: check stage state, exit
 code, and FEKO diagnostics. `job_id="example"` reads the bundled model notes,
 not precomputed results. Build a new job to obtain results.
 
+Before starting a subsequent stage, poll `get_job_status` until
+`ready_for_next_stage` is true. This requires at least one recorded stage,
+all recorded stages to be terminal (`completed` or `failed`), and no stage
+lock. Readiness means cleanup has finished, not that computation succeeded:
+check the stage state and report failures before continuing. Readiness is a
+snapshot, not a reservation; another client can start a stage before you do.
+Use a bounded polling timeout appropriate to your simulation.
+
 Sample prompt:
 
 > Use the FEKO tools to build a centre-fed dipole at 2.4 GHz. Read the installed
@@ -127,7 +135,26 @@ can be configured separately with `FEKO_MCP_API_DOCS`.
 .\.venv\Scripts\python.exe -m unittest discover -s tests -v
 # Requires FEKO and a licence; runs a small native dipole:
 .\.venv\Scripts\python.exe -m feko_mcp.verify_native
+# Long-running simulations: disable the total stage deadline, retaining request bounds:
+.\.venv\Scripts\python.exe -m feko_mcp.verify_native --stage-timeout 0 --request-timeout 30
 ```
+
+The native verifier defaults to a **120-second total deadline per stage** and
+a separate **30-second timeout per status request**. Use `--stage-timeout SECONDS`
+to increase the stage limit, or `--stage-timeout 0` to disable it. The total
+deadline includes requests and polling sleeps; the earlier deadline wins.
+`--request-timeout SECONDS` must be positive and remains active with the stage
+deadline disabled. A responsive stage can then run indefinitely, including if
+it is stuck. Failed stages still stop verification immediately.
+
+Either timeout fails verification and closes its MCP stdio client. On Windows,
+MCP SDK shutdown may terminate the server's worker process tree, including an
+active FEKO simulation. A timeout does **not** safely preserve a running job.
+The verifier adds no cancellation or worker ownership changes. Its request
+timeout bounds the awaited status call; it does not guarantee that server-side
+work stops, that transport shutdown is instantaneous, or that workers survive.
+Choose the stage limit before starting a long run. Native process survival on
+timeout has not been verified.
 
 CI checks configuration, input validation, worker outcomes, and stdio tools
 without FEKO. It does not verify electromagnetic accuracy. Native verification

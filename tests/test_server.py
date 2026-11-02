@@ -74,6 +74,57 @@ class ServerTests(unittest.TestCase):
             self.server.start_stage(directory, "post", [sys.executable], {"export.lua": "replacement"})
         self.assertEqual((directory / "export.lua").read_text(), "original")
 
+    def test_readiness_requires_terminal_statuses_and_no_lock(self):
+        for state in ("completed", "failed", "starting", "running"):
+            for locked in (True, False):
+                with self.subTest(state=state, locked=locked):
+                    directory = self.server.new_job()
+                    record = {"stage": "solve", "state": state}
+                    (directory / "status_solve.json").write_text(json.dumps(record))
+                    if locked:
+                        (directory / ".stage.lock").touch()
+                    result = self.server.get_job_status(directory.name)
+                    self.assertEqual(result["ready_for_next_stage"],
+                                     state in {"completed", "failed"} and not locked)
+                    self.assertEqual(result["stages"], [record])
+                    self.assertEqual((directory / ".stage.lock").exists(), locked)
+
+    def test_empty_and_mixed_job_not_ready(self):
+        directory = self.server.new_job()
+        self.assertFalse(self.server.get_job_status(directory.name)["ready_for_next_stage"])
+        for stage, state in (("build", "completed"), ("solve", "running")):
+            (directory / f"status_{stage}.json").write_text(
+                json.dumps({"stage": stage, "state": state}))
+        self.assertFalse(self.server.get_job_status(directory.name)["ready_for_next_stage"])
+
+    def test_terminal_status_with_lock_rejects_start_until_cleanup(self):
+        directory = self.server.new_job()
+        (directory / "status_solve.json").write_text(json.dumps(
+            {"stage": "solve", "state": "completed", "exit_code": 0}))
+        lock = directory / ".stage.lock"
+        lock.touch()
+        script = directory / "export.lua"
+        script.write_text("original")
+        with patch.object(self.server.subprocess, "Popen") as launch, \
+                patch.object(self.server.threading, "Thread"):
+            self.assertFalse(self.server.get_job_status(directory.name)["ready_for_next_stage"])
+            with self.assertRaisesRegex(ValueError, "starting/running stage"):
+                self.server.start_stage(directory, "post", ["fake-post"],
+                                        {"export.lua": "replacement"})
+            launch.assert_not_called()
+            self.assertEqual(script.read_text(), "original")
+            self.assertFalse((directory / "request_post.json").exists())
+            self.assertFalse((directory / "status_post.json").exists())
+            lock.unlink()
+            self.assertTrue(self.server.get_job_status(directory.name)["ready_for_next_stage"])
+            started = self.server.start_stage(directory, "post", ["fake-post"],
+                                              {"export.lua": "replacement"})
+            launch.assert_called_once()
+            self.assertEqual(started["state"], "starting")
+            self.assertEqual(script.read_text(), "replacement")
+            self.assertTrue(lock.exists())
+            self.assertFalse(self.server.get_job_status(directory.name)["ready_for_next_stage"])
+
     def test_solver_uses_basename_and_configurable_core_limit(self):
         directory = self.server.new_job()
         (directory / "model.cfx").touch()

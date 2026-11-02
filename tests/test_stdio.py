@@ -1,4 +1,5 @@
 import asyncio
+import json
 import os
 import sys
 import tempfile
@@ -22,4 +23,11 @@ class StdioTests(unittest.TestCase):
                         result = await session.call_tool("read_result_text", {"job_id": "example", "filename": "MODEL_NOTES.md"})
                         self.assertFalse(result.isError)
                         self.assertIn("not reproduced", result.content[0].text)
+                        status = await session.call_tool("get_job_status", {"job_id": "example"})
+                        self.assertFalse(status.isError)
+                        payload = status.structuredContent
+                        if payload is None:
+                            payload = json.loads(status.content[0].text)
+                        self.assertIs(payload["ready_for_next_stage"], False)
+                        self.assertEqual(payload["stages"], [])
         asyncio.run(asyncio.wait_for(check(), timeout=30))

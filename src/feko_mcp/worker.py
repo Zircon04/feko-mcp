@@ -27,7 +27,6 @@ try:
                                 creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
         write_status("running", pid=proc.pid)
         code = proc.wait()
-    (directory / ".stage.lock").unlink(missing_ok=True)
     write_status("completed" if code == 0 else "failed", exit_code=code)
 except Exception as exc:
     (directory / f"{stage}.log").write_text(traceback.format_exc(), encoding="utf-8")
